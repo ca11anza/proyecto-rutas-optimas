@@ -4,21 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     
-    <!-- Etiquetas PWA (Para que Chrome sepa que es instalable) -->
+    <!-- Etiquetas PWA -->
     <meta name="theme-color" content="#1d4ed8">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="icon.png">
     
     <title>Proyecto de Rutas Óptimas</title>
     
-    <!-- Tailwind CSS para estilos rápidos y responsivos -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Leaflet CSS (Mapa) -->
+    <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
-    <!-- Iconos Phosphor (Diseño limpio y moderno) -->
+    <!-- Iconos Phosphor -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <!-- SheetJS (Para leer archivos Excel) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
     <style>
         body, html { height: 100%; margin: 0; overflow: hidden; background-color: #f3f4f6; }
@@ -32,29 +35,42 @@
 </head>
 <body class="flex flex-col md:flex-row h-screen w-screen font-sans text-gray-800">
 
-    <!-- ÁREA DEL MAPA -->
     <div id="map" class="w-full h-[45%] md:h-full md:flex-1 order-1 md:order-2 relative z-0 border-b md:border-b-0 border-gray-300"></div>
 
-    <!-- PANEL DE CONTROL -->
     <div id="sidebar" class="w-full md:w-[400px] h-[55%] md:h-full flex flex-col bg-white shadow-[0_-4px_10px_rgba(0,0,0,0.1)] md:shadow-[4px_0_10px_rgba(0,0,0,0.1)] order-2 md:order-1 relative z-10">
         
-        <!-- Encabezado -->
         <div class="bg-blue-700 text-white px-4 py-3 shadow-md flex justify-between items-center shrink-0">
             <h1 class="text-lg font-bold flex items-center gap-2">
                 <i class="ph ph-map-trifold text-2xl"></i> Rutas Óptimas
             </h1>
         </div>
 
-        <!-- Buscador -->
+        <!-- Buscador y Botón Excel -->
         <div class="p-3 border-b bg-gray-50 shrink-0 relative">
-            <div class="flex gap-2">
-                <input type="text" id="search-input" placeholder="Buscar dirección..." 
+            <div class="flex gap-2 mb-2">
+                <input type="text" id="search-input" placeholder="Buscar dirección manual..." 
                        class="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm shadow-sm"
                        onkeypress="if(event.key === 'Enter') searchAddress()">
                 <button onclick="searchAddress()" class="bg-blue-600 text-white px-4 rounded-lg hover:bg-blue-700 transition shadow-sm flex items-center justify-center">
                     <i class="ph ph-magnifying-glass text-xl"></i>
                 </button>
             </div>
+            
+            <!-- Integración Excel -->
+            <input type="file" id="excel-upload" accept=".xlsx, .xls, .csv" class="hidden" onchange="processExcel(event)">
+            <button onclick="document.getElementById('excel-upload').click()" class="w-full bg-[#1da462] text-white py-2 px-4 rounded-lg hover:bg-[#15874f] transition shadow-sm flex items-center justify-center gap-2 text-sm font-semibold">
+                <i class="ph ph-file-xls text-xl"></i> Importar desde Excel
+            </button>
+            
+            <!-- Barra de progreso para el Excel -->
+            <div id="import-progress-container" class="hidden mt-2 bg-blue-100 rounded-lg p-2 text-center border border-blue-200">
+                <p id="import-text" class="text-xs font-bold text-blue-800 mb-1">Procesando direcciones...</p>
+                <div class="w-full bg-white rounded-full h-2 mb-1 overflow-hidden">
+                    <div id="import-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+                <p id="import-count" class="text-[10px] text-blue-600 font-medium">0 / 0</p>
+            </div>
+
             <ul id="search-results" class="absolute left-3 right-3 top-[100%] mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto hidden z-50 divide-y divide-gray-100 text-sm"></ul>
         </div>
 
@@ -70,7 +86,7 @@
             <div id="empty-state" class="text-center text-gray-400 py-10 px-4">
                 <i class="ph ph-map-pin-line text-5xl mb-2 opacity-50"></i>
                 <p class="text-sm font-medium">Aún no hay paradas.</p>
-                <p class="text-xs mt-1">Busca una dirección arriba para comenzar.</p>
+                <p class="text-xs mt-1">Busca una dirección o importa un Excel.</p>
             </div>
         </div>
 
@@ -92,8 +108,8 @@
                     <i class="ph ph-magic-wand text-lg"></i> Optimizar
                 </button>
             </div>
-            <button id="btn-export" onclick="exportToGoogleMaps()" disabled class="w-full bg-[#1da462] text-white py-3 rounded-lg text-sm font-bold hover:bg-[#15874f] transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-md">
-                <i class="ph ph-google-logo text-xl"></i> Navegar en Google Maps
+            <button id="btn-export" onclick="exportToGoogleMaps()" disabled class="w-full bg-gray-200 text-gray-800 border border-gray-300 py-3 rounded-lg text-sm font-bold hover:bg-gray-300 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm">
+                <i class="ph ph-google-logo text-xl text-[#ea4335]"></i> Navegar en Google Maps
             </button>
         </div>
     </div>
@@ -102,16 +118,14 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script>
-        // --- Registro de Service Worker para PWA (Instalación) ---
+        // Registro de Service Worker para PWA
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js')
-                    .then(reg => console.log('Service Worker registrado', reg))
                     .catch(err => console.error('Error al registrar SW', err));
             });
         }
 
-        // Variables globales
         let map;
         let stops = [];
         let markers = [];
@@ -122,14 +136,11 @@
             map = L.map('map', { zoomControl: false }).setView([40.4168, -3.7038], 12); 
             L.control.zoom({ position: 'topright' }).addTo(map);
             L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-                attribution: '&copy; OpenStreetMap contributors'
+                attribution: '&copy; OpenStreetMap'
             }).addTo(map);
 
             new Sortable(document.getElementById('stops-list'), {
-                animation: 150,
-                handle: '.drag-handle',
-                ghostClass: 'sortable-ghost',
-                dragClass: 'sortable-drag',
+                animation: 150, handle: '.drag-handle', ghostClass: 'sortable-ghost', dragClass: 'sortable-drag',
                 onEnd: function () {
                     const newOrder = [];
                     document.querySelectorAll('#stops-list li').forEach(li => {
@@ -138,8 +149,7 @@
                         if(stop) newOrder.push(stop);
                     });
                     stops = newOrder;
-                    updateMapMarkers(); 
-                    clearRoute(); 
+                    updateMapMarkers(); clearRoute(); 
                 }
             });
 
@@ -147,6 +157,117 @@
             window.addEventListener('resize', () => { map.invalidateSize(); });
         });
 
+        // --- LÓGICA DE EXCEL ---
+        async function processExcel(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }); // Formato array de arrays
+
+                    // Filtrar filas vacías o que no tengan al menos 2 columnas
+                    let rows = json.filter(row => row && row.length >= 2 && row[1]);
+
+                    // Si la primera fila es un encabezado (texto en ambas columnas), la quitamos
+                    if (rows.length > 0 && isNaN(parseInt(rows[0][0])) && isNaN(parseFloat(rows[0][1].toString().replace(',','.')))) {
+                        rows.shift(); 
+                    }
+
+                    if (rows.length === 0) {
+                        alert("El archivo Excel está vacío o no tiene el formato correcto (Col 1: ID, Col 2: Dirección/Coordenada).");
+                        return;
+                    }
+
+                    await processImportedRows(rows);
+
+                } catch (error) {
+                    alert("Hubo un error leyendo el archivo Excel.");
+                    console.error(error);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+            event.target.value = ''; // Resetear input
+        }
+
+        async function processImportedRows(rows) {
+            const container = document.getElementById('import-progress-container');
+            const bar = document.getElementById('import-bar');
+            const countText = document.getElementById('import-count');
+            
+            container.classList.remove('hidden');
+            let processed = 0;
+            let addedCount = 0;
+
+            for (const row of rows) {
+                const correlativo = row[0];
+                const dataStr = row[1].toString().trim();
+                
+                processed++;
+                bar.style.width = `${(processed / rows.length) * 100}%`;
+                countText.textContent = `${processed} / ${rows.length}`;
+
+                // Expresión regular para detectar si es una coordenada (ej: "40.41,-3.70" o "40.41, -3.70")
+                const coordMatch = dataStr.match(/^(-?\d+(\.\d+)?)[,\s;]+(-?\d+(\.\d+)?)$/);
+                
+                if (coordMatch) {
+                    // Es una coordenada: Se añade al instante
+                    const lat = parseFloat(coordMatch[1]);
+                    const lon = parseFloat(coordMatch[3]);
+                    addStopData(`[${correlativo}] ${dataStr}`, `Coordenada: ${dataStr}`, lat, lon);
+                    addedCount++;
+                } else {
+                    // Es una dirección de texto: Necesitamos buscarla en OpenStreetMap
+                    const found = await geocodeAddress(dataStr, correlativo);
+                    if(found) addedCount++;
+                    // PAUSA OBLIGATORIA DE 1.1 SEGUNDOS (Política de uso gratuito de Nominatim)
+                    await new Promise(r => setTimeout(r, 1100));
+                }
+            }
+            
+            container.classList.add('hidden');
+            renderList();
+            updateMapMarkers();
+            clearRoute();
+
+            if(addedCount > 0 && stops.length > 0) {
+               // Centrar el mapa en el último punto importado
+               map.setView([stops[stops.length-1].lat, stops[stops.length-1].lon], 12);
+            }
+            
+            alert(`Se procesó el Excel. Paradas añadidas con éxito: ${addedCount} de ${rows.length}.`);
+        }
+
+        async function geocodeAddress(address, correlativo) {
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`;
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data && data.length > 0) {
+                    const place = data[0];
+                    const shortName = place.display_name.split(',').slice(0, 2).join(', ');
+                    addStopData(`[${correlativo}] ${shortName}`, place.display_name, parseFloat(place.lat), parseFloat(place.lon));
+                    return true;
+                }
+            } catch (e) {
+                console.error("Error geocodificando: ", address);
+            }
+            return false;
+        }
+
+        // Función interna para añadir datos crudos sin re-renderizar todo (para el bucle del Excel)
+        function addStopData(shortName, fullName, lat, lon) {
+            const id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+            stops.push({ id, name: shortName, fullName, lat, lon });
+        }
+        // --- FIN LÓGICA DE EXCEL ---
+
+        // Búsqueda manual
         async function searchAddress() {
             const query = document.getElementById('search-input').value;
             if (!query) return;
@@ -155,9 +276,7 @@
                 const response = await fetch(url);
                 const data = await response.json();
                 showSearchResults(data);
-            } catch (error) {
-                alert("Error al buscar la dirección.");
-            }
+            } catch (error) { alert("Error al buscar."); }
         }
 
         function showSearchResults(results) {
@@ -170,7 +289,13 @@
                     const li = document.createElement('li');
                     li.className = 'p-3 hover:bg-blue-50 cursor-pointer flex items-start gap-2 transition';
                     li.innerHTML = `<i class="ph ph-map-pin text-blue-500 mt-0.5"></i> <span>${place.display_name}</span>`;
-                    li.onclick = () => addStop(place);
+                    li.onclick = () => {
+                        addStopData(place.display_name.split(',').slice(0, 2).join(', '), place.display_name, parseFloat(place.lat), parseFloat(place.lon));
+                        document.getElementById('search-input').value = '';
+                        resultsList.classList.add('hidden');
+                        renderList(); updateMapMarkers(); clearRoute();
+                        map.setView([parseFloat(place.lat), parseFloat(place.lon)], 14);
+                    };
                     resultsList.appendChild(li);
                 });
             }
@@ -178,31 +303,8 @@
         }
 
         document.addEventListener('click', (e) => {
-            if(!e.target.closest('.relative')) {
-                document.getElementById('search-results').classList.add('hidden');
-            }
+            if(!e.target.closest('.relative')) document.getElementById('search-results').classList.add('hidden');
         });
-
-        function addStop(place) {
-            const id = Date.now().toString();
-            const shortName = place.display_name.split(',').slice(0, 2).join(', ');
-            
-            stops.push({
-                id: id,
-                name: shortName,
-                fullName: place.display_name,
-                lat: parseFloat(place.lat),
-                lon: parseFloat(place.lon)
-            });
-
-            document.getElementById('search-input').value = '';
-            document.getElementById('search-results').classList.add('hidden');
-            
-            renderList();
-            updateMapMarkers();
-            clearRoute();
-            map.setView([parseFloat(place.lat), parseFloat(place.lon)], 14);
-        }
 
         function renderList() {
             const list = document.getElementById('stops-list');
@@ -214,8 +316,7 @@
 
             if (stops.length === 0) {
                 emptyState.classList.remove('hidden');
-                btnExport.disabled = true;
-                return;
+                btnExport.disabled = true; return;
             }
 
             emptyState.classList.add('hidden');
@@ -225,27 +326,19 @@
                 const li = document.createElement('li');
                 li.dataset.id = stop.id;
                 li.className = 'bg-white border border-gray-200 rounded-lg p-2.5 shadow-sm flex justify-between items-center gap-2 group';
-                
                 const isOrigin = index === 0;
                 const badgeColor = isOrigin ? 'bg-red-100 text-red-700 border-red-200' : 'bg-blue-100 text-blue-700 border-blue-200';
-                
                 li.innerHTML = `
                     <div class="flex items-center gap-3 overflow-hidden">
-                        <button class="drag-handle text-gray-400 hover:text-gray-600 touch-manipulation p-1">
-                            <i class="ph ph-list text-xl"></i>
-                        </button>
+                        <button class="drag-handle text-gray-400 hover:text-gray-600 touch-manipulation p-1"><i class="ph ph-list text-xl"></i></button>
                         <div class="flex flex-col min-w-0">
                             <div class="flex items-center gap-1.5 mb-0.5">
-                                <span class="text-[10px] font-bold border px-1.5 py-0.5 rounded-sm ${badgeColor}">
-                                    ${isOrigin ? 'ORIGEN' : 'PARADA ' + index}
-                                </span>
+                                <span class="text-[10px] font-bold border px-1.5 py-0.5 rounded-sm ${badgeColor}">${isOrigin ? 'ORIGEN' : 'PARADA ' + index}</span>
                             </div>
                             <span class="font-medium text-sm text-gray-800 truncate">${stop.name}</span>
                         </div>
                     </div>
-                    <button onclick="removeStop('${stop.id}')" class="text-gray-400 hover:text-red-500 transition p-2 shrink-0 rounded-full hover:bg-red-50">
-                        <i class="ph ph-trash text-lg"></i>
-                    </button>
+                    <button onclick="removeStop('${stop.id}')" class="text-gray-400 hover:text-red-500 transition p-2 shrink-0 rounded-full hover:bg-red-50"><i class="ph ph-trash text-lg"></i></button>
                 `;
                 list.appendChild(li);
             });
@@ -253,45 +346,31 @@
 
         function removeStop(id) {
             stops = stops.filter(s => s.id !== id);
-            renderList();
-            updateMapMarkers();
-            clearRoute();
+            renderList(); updateMapMarkers(); clearRoute();
         }
 
         function clearAll() {
-            if(confirm("¿Estás seguro de borrar todas las paradas?")) {
-                stops = [];
-                renderList();
-                updateMapMarkers();
-                clearRoute();
-                document.getElementById('stats-panel').classList.add('hidden');
+            if(confirm("¿Borrar todas las paradas?")) {
+                stops = []; renderList(); updateMapMarkers(); clearRoute();
             }
         }
 
         function updateMapMarkers() {
-            markers.forEach(m => map.removeLayer(m));
-            markers = [];
+            markers.forEach(m => map.removeLayer(m)); markers = [];
             if (stops.length === 0) return;
             const bounds = L.latLngBounds();
 
             stops.forEach((stop, index) => {
                 const isOrigin = index === 0;
                 const color = isOrigin ? '#ef4444' : '#3b82f6'; 
-                
-                const html = `
-                    <div style="background-color: ${color}; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; border: 2px solid white; box-shadow: 0 3px 6px rgba(0,0,0,0.3);">
-                        ${index === 0 ? '<i class="ph ph-flag-checkered"></i>' : index}
-                    </div>
-                `;
-
+                const html = `<div style="background-color: ${color}; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; border: 2px solid white; box-shadow: 0 3px 6px rgba(0,0,0,0.3);">${index === 0 ? '<i class="ph ph-flag-checkered"></i>' : index}</div>`;
                 const customIcon = L.divIcon({ className: 'custom-div-icon', html: html, iconSize: [28, 28], iconAnchor: [14, 14] });
                 const marker = L.marker([stop.lat, stop.lon], { icon: customIcon }).addTo(map);
                 marker.bindPopup(`<b>${index === 0 ? 'Origen' : 'Parada ' + index}</b><br>${stop.name}`);
                 markers.push(marker);
                 bounds.extend([stop.lat, stop.lon]);
             });
-
-            if (stops.length > 1) { map.fitBounds(bounds, { padding: [40, 40] }); }
+            if (stops.length > 1) map.fitBounds(bounds, { padding: [40, 40] });
         }
 
         function clearRoute() {
@@ -300,15 +379,11 @@
         }
 
         async function calculateRoute(optimize) {
-            if (stops.length < 2) {
-                alert("Necesitas al menos 2 paradas para calcular una ruta.");
-                return;
-            }
+            if (stops.length < 2) { alert("Necesitas al menos 2 paradas."); return; }
+            if (stops.length > 100) { alert("Demasiadas paradas. El algoritmo soporta un máximo de ~100 puntos por cálculo."); return; }
 
             const coordsString = stops.map(s => `${s.lon},${s.lat}`).join(';');
-            let url = optimize 
-                ? `https://router.project-osrm.org/trip/v1/driving/${coordsString}?source=first&destination=any&roundtrip=false&overview=full&geometries=geojson`
-                : `https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson`;
+            let url = optimize ? `https://router.project-osrm.org/trip/v1/driving/${coordsString}?source=first&destination=any&roundtrip=false&overview=full&geometries=geojson` : `https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson`;
 
             try {
                 const btnIcon = optimize ? '.ph-magic-wand' : '.ph-list-numbers';
@@ -316,73 +391,55 @@
 
                 const response = await fetch(url);
                 const data = await response.json();
-
                 document.querySelector(btnIcon).classList.remove('animate-spin');
 
-                if (data.code !== 'Ok') {
-                    alert("No se pudo calcular la ruta. Comprueba que los puntos sean accesibles por coche.");
-                    return;
-                }
+                if (data.code !== 'Ok') { alert("Error al calcular la ruta."); return; }
 
                 if (optimize && data.waypoints) {
                     const optimizedStops = [];
                     const sortedWaypoints = data.waypoints.sort((a, b) => a.waypoint_index - b.waypoint_index);
-                    sortedWaypoints.forEach(wp => {
-                        const originalStopIndex = data.waypoints.indexOf(wp);
-                        optimizedStops.push(stops[originalStopIndex]);
-                    });
-                    stops = optimizedStops;
-                    renderList();
-                    updateMapMarkers();
+                    sortedWaypoints.forEach(wp => { optimizedStops.push(stops[data.waypoints.indexOf(wp)]); });
+                    stops = optimizedStops; renderList(); updateMapMarkers();
                 }
 
                 clearRoute();
                 const routeGeom = optimize ? data.trips[0].geometry : data.routes[0].geometry;
                 const latLngs = routeGeom.coordinates.map(c => [c[1], c[0]]);
-                
                 routePolyline = L.polyline(latLngs, { color: '#3b82f6', weight: 6, opacity: 0.8, lineJoin: 'round' }).addTo(map);
                 map.fitBounds(routePolyline.getBounds(), { padding: [30, 30] });
 
                 const routeData = optimize ? data.trips[0] : data.routes[0];
                 showStats(routeData.duration, routeData.distance);
-
             } catch (error) {
-                alert("Error de conexión al servidor de rutas.");
+                alert("Error de conexión al servidor.");
                 document.querySelectorAll('.animate-spin').forEach(el => el.classList.remove('animate-spin'));
             }
         }
 
         function showStats(durationSecs, distanceMeters) {
             const drivingMins = Math.round(durationSecs / 60);
-            const dropStops = stops.length > 1 ? stops.length - 1 : 0;
-            const dropMins = Math.round((dropStops * SECONDS_PER_DELIVERY) / 60);
+            const dropMins = Math.round(((stops.length > 1 ? stops.length - 1 : 0) * SECONDS_PER_DELIVERY) / 60);
             const totalMins = drivingMins + dropMins;
             const distKm = (distanceMeters / 1000).toFixed(1);
 
-            let timeText = "";
-            if (totalMins >= 60) {
-                const h = Math.floor(totalMins / 60);
-                const m = totalMins % 60;
-                timeText = `${h}h ${m}m`;
-            } else {
-                timeText = `${totalMins} min`;
-            }
-
-            document.getElementById('time-est').textContent = timeText;
+            document.getElementById('time-est').textContent = totalMins >= 60 ? `${Math.floor(totalMins / 60)}h ${totalMins % 60}m` : `${totalMins} min`;
             document.getElementById('dist-est').textContent = `${distKm} km`;
             document.getElementById('stats-panel').classList.remove('hidden');
         }
 
         function exportToGoogleMaps() {
             if (stops.length < 2) return;
-            if (stops.length > 10) { alert("Google Maps solo permite un máximo de 9-10 paradas por viaje."); }
+            if (stops.length > 10) alert("Google Maps solo permite exportar un máximo de 10 paradas. Se enviarán las primeras 10.");
 
-            const origin = `${stops[0].lat},${stops[0].lon}`;
-            const destination = `${stops[stops.length - 1].lat},${stops[stops.length - 1].lon}`;
+            // Limitar a 10 paradas máximo para la URL de Google Maps
+            const exportStops = stops.slice(0, 10);
+            
+            const origin = `${exportStops[0].lat},${exportStops[0].lon}`;
+            const destination = `${exportStops[exportStops.length - 1].lat},${exportStops[exportStops.length - 1].lon}`;
             let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
 
-            if (stops.length > 2) {
-                const waypoints = stops.slice(1, -1).map(s => `${s.lat},${s.lon}`).join('|');
+            if (exportStops.length > 2) {
+                const waypoints = exportStops.slice(1, -1).map(s => `${s.lat},${s.lon}`).join('|');
                 url += `&waypoints=${waypoints}`;
             }
             window.open(url, '_blank');
