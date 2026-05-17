@@ -2,8 +2,13 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <!-- Etiqueta VITAL para móviles: Ajusta la escala y evita que el usuario rompa el layout con zoom -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <!-- Etiquetas PWA (Para que Chrome sepa que es instalable) -->
+    <meta name="theme-color" content="#1d4ed8">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.png">
+    
     <title>Proyecto de Rutas Óptimas</title>
     
     <!-- Tailwind CSS para estilos rápidos y responsivos -->
@@ -16,30 +21,21 @@
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
     <style>
-        /* Ajustes específicos para Leaflet y el layout general */
         body, html { height: 100%; margin: 0; overflow: hidden; background-color: #f3f4f6; }
-        
-        /* Asegura que los controles del mapa no se superpongan feo en móvil */
         .leaflet-control-container .leaflet-top { z-index: 400; }
         .leaflet-control-container .leaflet-bottom { z-index: 400; }
-        
-        /* Animación suave para la lista */
         .sortable-ghost { opacity: 0.4; background-color: #eff6ff; }
         .sortable-drag { background-color: white; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); cursor: grabbing !important; }
-        
-        /* Ocultar barra de scroll en navegadores webkit para un look más limpio de app */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
 <body class="flex flex-col md:flex-row h-screen w-screen font-sans text-gray-800">
 
-    <!-- ÁREA DEL MAPA (En móvil va arriba, en PC va a la derecha) -->
-    <!-- order-1 en móvil, order-2 en PC -->
+    <!-- ÁREA DEL MAPA -->
     <div id="map" class="w-full h-[45%] md:h-full md:flex-1 order-1 md:order-2 relative z-0 border-b md:border-b-0 border-gray-300"></div>
 
-    <!-- PANEL DE CONTROL (En móvil va abajo, en PC a la izquierda) -->
-    <!-- order-2 en móvil, order-1 en PC -->
+    <!-- PANEL DE CONTROL -->
     <div id="sidebar" class="w-full md:w-[400px] h-[55%] md:h-full flex flex-col bg-white shadow-[0_-4px_10px_rgba(0,0,0,0.1)] md:shadow-[4px_0_10px_rgba(0,0,0,0.1)] order-2 md:order-1 relative z-10">
         
         <!-- Encabezado -->
@@ -52,19 +48,17 @@
         <!-- Buscador -->
         <div class="p-3 border-b bg-gray-50 shrink-0 relative">
             <div class="flex gap-2">
-                <input type="text" id="search-input" placeholder="Buscar dirección (ej. Calle Mayor, Madrid)" 
+                <input type="text" id="search-input" placeholder="Buscar dirección..." 
                        class="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm shadow-sm"
                        onkeypress="if(event.key === 'Enter') searchAddress()">
                 <button onclick="searchAddress()" class="bg-blue-600 text-white px-4 rounded-lg hover:bg-blue-700 transition shadow-sm flex items-center justify-center">
                     <i class="ph ph-magnifying-glass text-xl"></i>
                 </button>
             </div>
-            
-            <!-- Resultados desplegables -->
             <ul id="search-results" class="absolute left-3 right-3 top-[100%] mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto hidden z-50 divide-y divide-gray-100 text-sm"></ul>
         </div>
 
-        <!-- Lista de Paradas (Área Desplazable) -->
+        <!-- Lista de Paradas -->
         <div class="flex-1 overflow-y-auto p-3 bg-white no-scrollbar">
             <div class="flex justify-between items-center mb-2 px-1">
                 <h2 class="text-xs font-bold text-gray-500 uppercase tracking-wider">Tus Paradas (<span id="stop-count">0</span>)</h2>
@@ -72,23 +66,16 @@
                     <i class="ph ph-trash"></i> Borrar Todo
                 </button>
             </div>
-
-            <ul id="stops-list" class="space-y-2 pb-2">
-                <!-- Los elementos se insertan aquí vía JS -->
-            </ul>
-
-            <!-- Estado Vacío -->
+            <ul id="stops-list" class="space-y-2 pb-2"></ul>
             <div id="empty-state" class="text-center text-gray-400 py-10 px-4">
                 <i class="ph ph-map-pin-line text-5xl mb-2 opacity-50"></i>
                 <p class="text-sm font-medium">Aún no hay paradas.</p>
-                <p class="text-xs mt-1">Busca una dirección arriba para comenzar a crear tu ruta.</p>
+                <p class="text-xs mt-1">Busca una dirección arriba para comenzar.</p>
             </div>
         </div>
 
-        <!-- Botones de Acción (Fijos al fondo del panel) -->
+        <!-- Botones de Acción -->
         <div class="p-3 border-t bg-gray-50 shrink-0 shadow-[0_-5px_10px_rgba(0,0,0,0.02)]">
-            
-            <!-- Panel de Estadísticas -->
             <div id="stats-panel" class="hidden mb-3 bg-blue-50 border border-blue-200 p-3 rounded-lg shadow-inner">
                 <div class="flex justify-between items-center text-blue-900 font-bold text-sm">
                     <span class="flex items-center gap-1.5"><i class="ph ph-clock text-lg text-blue-600"></i> <span id="time-est">--</span></span>
@@ -115,32 +102,35 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script>
+        // --- Registro de Service Worker para PWA (Instalación) ---
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('Service Worker registrado', reg))
+                    .catch(err => console.error('Error al registrar SW', err));
+            });
+        }
+
         // Variables globales
         let map;
         let stops = [];
         let markers = [];
         let routePolyline = null;
-        const SECONDS_PER_DELIVERY = 300; // 5 minutos
+        const SECONDS_PER_DELIVERY = 300; 
 
-        // Inicializar Mapa
         document.addEventListener('DOMContentLoaded', () => {
-            map = L.map('map', { zoomControl: false }).setView([40.4168, -3.7038], 12); // Centro default: Madrid
-            
-            // Añadir controles de zoom en la esquina superior derecha
+            map = L.map('map', { zoomControl: false }).setView([40.4168, -3.7038], 12); 
             L.control.zoom({ position: 'topright' }).addTo(map);
-
             L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-                attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+                attribution: '&copy; OpenStreetMap contributors'
             }).addTo(map);
 
-            // Inicializar Arrastrar y Soltar (SortableJS)
             new Sortable(document.getElementById('stops-list'), {
                 animation: 150,
-                handle: '.drag-handle', // Solo se arrastra desde el icono
+                handle: '.drag-handle',
                 ghostClass: 'sortable-ghost',
                 dragClass: 'sortable-drag',
                 onEnd: function () {
-                    // Actualizar el array interno 'stops' según el nuevo orden del HTML
                     const newOrder = [];
                     document.querySelectorAll('#stops-list li').forEach(li => {
                         const id = li.dataset.id;
@@ -148,23 +138,19 @@
                         if(stop) newOrder.push(stop);
                     });
                     stops = newOrder;
-                    updateMapMarkers(); // Actualizar números en el mapa
-                    clearRoute(); // Borrar ruta anterior porque el orden cambió
+                    updateMapMarkers(); 
+                    clearRoute(); 
                 }
             });
 
-            // Arreglar problema de tamaño del mapa en móviles al cargar
             setTimeout(() => { map.invalidateSize(); }, 500);
             window.addEventListener('resize', () => { map.invalidateSize(); });
         });
 
-        // Buscar Dirección con Nominatim (OSM)
         async function searchAddress() {
             const query = document.getElementById('search-input').value;
             if (!query) return;
-
             const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`;
-            
             try {
                 const response = await fetch(url);
                 const data = await response.json();
@@ -177,7 +163,6 @@
         function showSearchResults(results) {
             const resultsList = document.getElementById('search-results');
             resultsList.innerHTML = '';
-            
             if (results.length === 0) {
                 resultsList.innerHTML = '<li class="p-3 text-gray-500">No se encontraron resultados</li>';
             } else {
@@ -192,17 +177,14 @@
             resultsList.classList.remove('hidden');
         }
 
-        // Ocultar resultados al hacer clic fuera
         document.addEventListener('click', (e) => {
             if(!e.target.closest('.relative')) {
                 document.getElementById('search-results').classList.add('hidden');
             }
         });
 
-        // Añadir Parada
         function addStop(place) {
             const id = Date.now().toString();
-            // Simplificar el nombre para la lista
             const shortName = place.display_name.split(',').slice(0, 2).join(', ');
             
             stops.push({
@@ -219,12 +201,9 @@
             renderList();
             updateMapMarkers();
             clearRoute();
-            
-            // Centrar mapa en el nuevo punto
             map.setView([parseFloat(place.lat), parseFloat(place.lon)], 14);
         }
 
-        // Renderizar HTML de la lista
         function renderList() {
             const list = document.getElementById('stops-list');
             const emptyState = document.getElementById('empty-state');
@@ -272,7 +251,6 @@
             });
         }
 
-        // Eliminar parada
         function removeStop(id) {
             stops = stops.filter(s => s.id !== id);
             renderList();
@@ -280,7 +258,6 @@
             clearRoute();
         }
 
-        // Limpiar todo
         function clearAll() {
             if(confirm("¿Estás seguro de borrar todas las paradas?")) {
                 stops = [];
@@ -291,18 +268,15 @@
             }
         }
 
-        // Actualizar Marcadores en el Mapa
         function updateMapMarkers() {
             markers.forEach(m => map.removeLayer(m));
             markers = [];
-            
             if (stops.length === 0) return;
-
             const bounds = L.latLngBounds();
 
             stops.forEach((stop, index) => {
                 const isOrigin = index === 0;
-                const color = isOrigin ? '#ef4444' : '#3b82f6'; // Rojo inicio, Azul resto
+                const color = isOrigin ? '#ef4444' : '#3b82f6'; 
                 
                 const html = `
                     <div style="background-color: ${color}; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; border: 2px solid white; box-shadow: 0 3px 6px rgba(0,0,0,0.3);">
@@ -310,22 +284,14 @@
                     </div>
                 `;
 
-                const customIcon = L.divIcon({
-                    className: 'custom-div-icon',
-                    html: html,
-                    iconSize: [28, 28],
-                    iconAnchor: [14, 14]
-                });
-
+                const customIcon = L.divIcon({ className: 'custom-div-icon', html: html, iconSize: [28, 28], iconAnchor: [14, 14] });
                 const marker = L.marker([stop.lat, stop.lon], { icon: customIcon }).addTo(map);
                 marker.bindPopup(`<b>${index === 0 ? 'Origen' : 'Parada ' + index}</b><br>${stop.name}`);
                 markers.push(marker);
                 bounds.extend([stop.lat, stop.lon]);
             });
 
-            if (stops.length > 1) {
-                map.fitBounds(bounds, { padding: [40, 40] });
-            }
+            if (stops.length > 1) { map.fitBounds(bounds, { padding: [40, 40] }); }
         }
 
         function clearRoute() {
@@ -333,27 +299,18 @@
             document.getElementById('stats-panel').classList.add('hidden');
         }
 
-        // Calcular Ruta con OSRM
         async function calculateRoute(optimize) {
             if (stops.length < 2) {
                 alert("Necesitas al menos 2 paradas para calcular una ruta.");
                 return;
             }
 
-            // OSRM requiere formato "lon,lat;lon,lat"
             const coordsString = stops.map(s => `${s.lon},${s.lat}`).join(';');
-            
-            // Si optimize es true, usa el servicio 'trip' (TSP), si es false usa 'route'
-            let url = '';
-            if (optimize) {
-                // Trip API: source=first asegura que el inicio no se cambie de lugar
-                url = `https://router.project-osrm.org/trip/v1/driving/${coordsString}?source=first&destination=any&roundtrip=false&overview=full&geometries=geojson`;
-            } else {
-                url = `https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson`;
-            }
+            let url = optimize 
+                ? `https://router.project-osrm.org/trip/v1/driving/${coordsString}?source=first&destination=any&roundtrip=false&overview=full&geometries=geojson`
+                : `https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson`;
 
             try {
-                // Botón en estado de carga
                 const btnIcon = optimize ? '.ph-magic-wand' : '.ph-list-numbers';
                 document.querySelector(btnIcon).classList.add('animate-spin');
 
@@ -367,42 +324,25 @@
                     return;
                 }
 
-                // Si optmizamos, OSRM nos devuelve un nuevo orden en "waypoints"
                 if (optimize && data.waypoints) {
-                    // Reordenar el array local
                     const optimizedStops = [];
-                    // Waypoints de OSRM tienen waypoint_index indicando el orden lógico
                     const sortedWaypoints = data.waypoints.sort((a, b) => a.waypoint_index - b.waypoint_index);
-                    
                     sortedWaypoints.forEach(wp => {
-                        // Encontrar la parada original que coincide con estas coordenadas aprox
-                        // (OSRM puede desplazar ligeramente la coordenada a la calle más cercana)
                         const originalStopIndex = data.waypoints.indexOf(wp);
                         optimizedStops.push(stops[originalStopIndex]);
                     });
-                    
                     stops = optimizedStops;
                     renderList();
                     updateMapMarkers();
                 }
 
-                // Dibujar línea azul
                 clearRoute();
                 const routeGeom = optimize ? data.trips[0].geometry : data.routes[0].geometry;
-                
-                // Invertir coordenadas de GeoJSON (lon, lat) a Leaflet (lat, lon)
                 const latLngs = routeGeom.coordinates.map(c => [c[1], c[0]]);
                 
-                routePolyline = L.polyline(latLngs, {
-                    color: '#3b82f6', // Azul Tailwind
-                    weight: 6,
-                    opacity: 0.8,
-                    lineJoin: 'round'
-                }).addTo(map);
-
+                routePolyline = L.polyline(latLngs, { color: '#3b82f6', weight: 6, opacity: 0.8, lineJoin: 'round' }).addTo(map);
                 map.fitBounds(routePolyline.getBounds(), { padding: [30, 30] });
 
-                // Mostrar estadísticas de tiempo
                 const routeData = optimize ? data.trips[0] : data.routes[0];
                 showStats(routeData.duration, routeData.distance);
 
@@ -413,17 +353,12 @@
         }
 
         function showStats(durationSecs, distanceMeters) {
-            // Tiempo de conducción puro
             const drivingMins = Math.round(durationSecs / 60);
-            
-            // Tiempo de entregas (Excluyendo el origen)
             const dropStops = stops.length > 1 ? stops.length - 1 : 0;
             const dropMins = Math.round((dropStops * SECONDS_PER_DELIVERY) / 60);
-            
             const totalMins = drivingMins + dropMins;
             const distKm = (distanceMeters / 1000).toFixed(1);
 
-            // Formatear texto (Ej. 1h 25m)
             let timeText = "";
             if (totalMins >= 60) {
                 const h = Math.floor(totalMins / 60);
@@ -438,25 +373,18 @@
             document.getElementById('stats-panel').classList.remove('hidden');
         }
 
-        // Exportar a Google Maps
         function exportToGoogleMaps() {
             if (stops.length < 2) return;
-
-            if (stops.length > 10) {
-                alert("Google Maps solo permite un máximo de 9-10 paradas por viaje. Se abrirá la app, pero puede que las últimas paradas no se carguen.");
-            }
+            if (stops.length > 10) { alert("Google Maps solo permite un máximo de 9-10 paradas por viaje."); }
 
             const origin = `${stops[0].lat},${stops[0].lon}`;
             const destination = `${stops[stops.length - 1].lat},${stops[stops.length - 1].lon}`;
-            
             let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
 
-            // Si hay puntos intermedios (excluyendo inicio y fin)
             if (stops.length > 2) {
                 const waypoints = stops.slice(1, -1).map(s => `${s.lat},${s.lon}`).join('|');
                 url += `&waypoints=${waypoints}`;
             }
-
             window.open(url, '_blank');
         }
     </script>
