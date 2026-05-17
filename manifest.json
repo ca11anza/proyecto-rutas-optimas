@@ -2,7 +2,7 @@
 "name": "Proyecto de Rutas Óptimas",
 "short_name": "Rutas",
 "description": "Calculadora y optimizador de rutas de entrega para repartidores.",
-"start_url": "./",
+"start_url": "index.html",
 "display": "standalone",
 "background_color": "#ffffff",
 "theme_color": "#1d4ed8",
@@ -10,7 +10,8 @@
 {
 "src": "icon.png",
 "sizes": "512x512",
-"type": "image/png"
+"type": "image/png",
+"purpose": "any maskable"
 }
 ]
 }
